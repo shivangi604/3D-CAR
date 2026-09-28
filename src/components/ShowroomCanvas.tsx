@@ -29,8 +29,9 @@ interface ShowroomCanvasProps {
   cameraPreset: CameraPreset;
   activeHotspotId: string | null;
   onSelectHotspot: (hotspot: CarHotspot | null) => void;
-  testDriveSpeed: number; // 0 to 240 mph
+  testDriveSpeed: number; // 0 to 248 mph
   isAccelerating: boolean;
+  isBraking: boolean;
 }
 
 export const ShowroomCanvas: React.FC<ShowroomCanvasProps> = ({
@@ -51,6 +52,7 @@ export const ShowroomCanvas: React.FC<ShowroomCanvasProps> = ({
   onSelectHotspot,
   testDriveSpeed,
   isAccelerating,
+  isBraking,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -67,6 +69,46 @@ export const ShowroomCanvas: React.FC<ShowroomCanvasProps> = ({
 
   // Hotspot 3D spheres
   const hotspotMeshesRef = useRef<{ mesh: THREE.Mesh; hotspot: CarHotspot }[]>([]);
+
+  // State refs for animation loop
+  const stageRef = useRef(stage);
+  const testDriveSpeedRef = useRef(testDriveSpeed);
+  const isAcceleratingRef = useRef(isAccelerating);
+  const isBrakingRef = useRef(isBraking);
+  const doorsOpenRef = useRef(doorsOpen);
+  const wingDeployedRef = useRef(wingDeployed);
+  const frunkOpenRef = useRef(frunkOpen);
+  const headlightsOnRef = useRef(headlightsOn);
+  const underglowOnRef = useRef(underglowOn);
+  const autoRotateRef = useRef(autoRotate);
+  const activeHotspotIdRef = useRef(activeHotspotId);
+
+  // Sync state refs on each render
+  useEffect(() => {
+    stageRef.current = stage;
+    testDriveSpeedRef.current = testDriveSpeed;
+    isAcceleratingRef.current = isAccelerating;
+    isBrakingRef.current = isBraking;
+    doorsOpenRef.current = doorsOpen;
+    wingDeployedRef.current = wingDeployed;
+    frunkOpenRef.current = frunkOpen;
+    headlightsOnRef.current = headlightsOn;
+    underglowOnRef.current = underglowOn;
+    autoRotateRef.current = autoRotate;
+    activeHotspotIdRef.current = activeHotspotId;
+  }, [
+    stage,
+    testDriveSpeed,
+    isAccelerating,
+    isBraking,
+    doorsOpen,
+    wingDeployed,
+    frunkOpen,
+    headlightsOn,
+    underglowOn,
+    autoRotate,
+    activeHotspotId,
+  ]);
 
   // Camera Orbit & Lerp State
   const cameraStateRef = useRef({
@@ -307,7 +349,7 @@ export const ShowroomCanvas: React.FC<ShowroomCanvasProps> = ({
     };
     window.addEventListener('resize', handleResize);
 
-    // Animation Loop
+    // Single Unified Animation Loop
     let animationFrameId: number;
     let clock = new THREE.Clock();
 
@@ -318,6 +360,10 @@ export const ShowroomCanvas: React.FC<ShowroomCanvasProps> = ({
 
       const camState = cameraStateRef.current;
       const cameraObj = cameraRef.current;
+      const currentStage = stageRef.current;
+      const currentSpeed = testDriveSpeedRef.current;
+      const accelerating = isAcceleratingRef.current;
+      const braking = isBrakingRef.current;
 
       // Handle Launch Screen Shake
       if (camState.shakeIntensity > 0.001) {
@@ -346,17 +392,53 @@ export const ShowroomCanvas: React.FC<ShowroomCanvasProps> = ({
         mesh.scale.set(pulse, pulse, pulse);
       });
 
-      // Tunnel grid lines motion during test drive
-      if (tunnelGridRef.current && tunnelGridRef.current.visible) {
-        const lines = tunnelGridRef.current.children;
-        const driveSpeedNorm = testDriveSpeed / 120;
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i];
-          line.position.z += delta * (25 + driveSpeedNorm * 45);
-          if (line.position.z > 15) {
-            line.position.z = -75;
+      // Auto-rotate in showroom if enabled and not dragging or inspecting hotspot
+      if (currentStage === 'showroom' && autoRotateRef.current && !camState.isDragging && !activeHotspotIdRef.current) {
+        camState.azimuth += delta * 0.35;
+        const x = Math.sin(camState.azimuth) * camState.distance * Math.cos(camState.elevation);
+        const z = Math.cos(camState.azimuth) * camState.distance * Math.cos(camState.elevation);
+        const y = Math.sin(camState.elevation) * camState.distance + 0.6;
+        camState.targetPos.set(x, y, z);
+      }
+
+      // TEST DRIVE MOVEMENT & DYNAMICS
+      let spinSpeed = 0;
+      if (currentStage === 'test_drive') {
+        // IMPORTANT: Only advance road and spin wheels when speed > 0.05 MPH!
+        // When speed is zero (or on applying brake at zero), car and road are completely stationary!
+        if (currentSpeed > 0.05) {
+          spinSpeed = (currentSpeed / 60) * Math.PI * 8;
+
+          if (tunnelGridRef.current && tunnelGridRef.current.visible) {
+            const lines = tunnelGridRef.current.children;
+            const moveDelta = delta * (currentSpeed * 0.45);
+            for (let i = 1; i < lines.length; i++) {
+              const line = lines[i];
+              line.position.z += moveDelta;
+              if (line.position.z > 15) {
+                line.position.z = -75;
+              }
+            }
           }
         }
+
+        // Sound engine update
+        sound.updateEngineSound(currentSpeed / 248, accelerating);
+      }
+
+      // Update Car Model animations
+      if (carModelRef.current) {
+        const isDriving = currentStage === 'test_drive';
+        carModelRef.current.updateAnimations(
+          doorsOpenRef.current,
+          wingDeployedRef.current || (isDriving && (currentSpeed > 80 || braking)),
+          frunkOpenRef.current,
+          headlightsOnRef.current,
+          underglowOnRef.current,
+          spinSpeed,
+          delta,
+          braking
+        );
       }
 
       renderer.render(scene, camera);
@@ -553,62 +635,6 @@ export const ShowroomCanvas: React.FC<ShowroomCanvasProps> = ({
       }
     }
   }, [activeHotspotId, stage]);
-
-  // Dynamic animation updates (doors, wing, frunk, headlights, underglow, test drive wheels & sound)
-  useEffect(() => {
-    let animId: number;
-    let lastTime = performance.now();
-
-    const loop = () => {
-      animId = requestAnimationFrame(loop);
-      const now = performance.now();
-      const delta = (now - lastTime) / 1000;
-      lastTime = now;
-
-      // Calculate wheel spin speed
-      let spinSpeed = 0;
-      if (stage === 'test_drive') {
-        spinSpeed = (testDriveSpeed / 60) * Math.PI * 8;
-        sound.updateEngineSound(testDriveSpeed / 240, isAccelerating);
-      }
-
-      // Auto-rotate in showroom if enabled and not dragging
-      const camState = cameraStateRef.current;
-      if (stage === 'showroom' && autoRotate && !camState.isDragging && !activeHotspotId) {
-        camState.azimuth += delta * 0.35;
-        const x = Math.sin(camState.azimuth) * camState.distance * Math.cos(camState.elevation);
-        const z = Math.cos(camState.azimuth) * camState.distance * Math.cos(camState.elevation);
-        const y = Math.sin(camState.elevation) * camState.distance + 0.6;
-        camState.targetPos.set(x, y, z);
-      }
-
-      if (carModelRef.current) {
-        carModelRef.current.updateAnimations(
-          doorsOpen,
-          wingDeployed || (stage === 'test_drive' && testDriveSpeed > 80),
-          frunkOpen,
-          headlightsOn,
-          underglowOn,
-          spinSpeed,
-          delta
-        );
-      }
-    };
-
-    animId = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(animId);
-  }, [
-    doorsOpen,
-    wingDeployed,
-    frunkOpen,
-    headlightsOn,
-    underglowOn,
-    autoRotate,
-    stage,
-    testDriveSpeed,
-    isAccelerating,
-    activeHotspotId,
-  ]);
 
   // Pointer Interaction Handlers for 360° Drag & Click on Hotspots
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {

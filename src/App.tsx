@@ -168,6 +168,7 @@ export default function App() {
         onSelectHotspot={handleSelectHotspot}
         testDriveSpeed={testDriveSpeed}
         isAccelerating={isAccelerating}
+        isBraking={isBraking}
       />
 
       {/* Futuristic UI HUD, Top Bar & Configurator Panels */}

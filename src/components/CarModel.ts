@@ -45,7 +45,8 @@ export interface CarModelObjects {
     headlightsOn: boolean,
     underglowOn: boolean,
     wheelSpinSpeed: number,
-    delta: number
+    delta: number,
+    isBraking?: boolean
   ) => void;
 }
 
@@ -587,7 +588,7 @@ export function createCarModel(): CarModelObjects {
     (underglowMesh.material as THREE.MeshBasicMaterial).color.set(interior.ambientGlowHex);
   };
 
-  // Update Animations (Doors, Wing, Frunk, Headlights, Wheel spin)
+  // Update Animations (Doors, Wing, Frunk, Headlights, Wheel spin, Brake light flare)
   const updateAnimations = (
     doorsOpen: boolean,
     wingDeployed: boolean,
@@ -595,7 +596,8 @@ export function createCarModel(): CarModelObjects {
     headlightsOn: boolean,
     underglowOn: boolean,
     wheelSpinSpeed: number,
-    delta: number
+    delta: number,
+    isBraking: boolean = false
   ) => {
     const lerpSpeed = Math.min(1, delta * 6);
 
@@ -609,9 +611,9 @@ export function createCarModel(): CarModelObjects {
     rightDoorPivot.rotation.z = THREE.MathUtils.lerp(rightDoorPivot.rotation.z, targetDoorRotZ, lerpSpeed);
     rightDoorPivot.rotation.x = THREE.MathUtils.lerp(rightDoorPivot.rotation.x, targetDoorRotX, lerpSpeed);
 
-    // Active Aero Wing: elevate position Y and tilt pitch X
-    const targetWingY = wingDeployed ? 1.05 : 0.82;
-    const targetWingPitch = wingDeployed ? -0.25 : 0.0;
+    // Active Aero Wing: elevate position Y and tilt pitch X (tilt higher as airbrake during heavy braking)
+    const targetWingY = (wingDeployed || isBraking) ? 1.08 : 0.82;
+    const targetWingPitch = isBraking ? -0.45 : wingDeployed ? -0.25 : 0.0;
     rearWingPivot.position.y = THREE.MathUtils.lerp(rearWingPivot.position.y, targetWingY, lerpSpeed);
     rearWingPivot.rotation.x = THREE.MathUtils.lerp(rearWingPivot.rotation.x, targetWingPitch, lerpSpeed);
 
@@ -626,6 +628,14 @@ export function createCarModel(): CarModelObjects {
     (leftLens.material as THREE.MeshStandardMaterial).emissiveIntensity = headlightsOn ? 3.0 : 0.2;
     (rightLens.material as THREE.MeshStandardMaterial).emissiveIntensity = headlightsOn ? 3.0 : 0.2;
     (drlStrip.material as THREE.MeshStandardMaterial).emissiveIntensity = headlightsOn ? 2.5 : 0.4;
+
+    // Taillight Brake Flare
+    const targetTailEmissive = isBraking ? 5.0 : 2.2;
+    (taillightStrip.material as THREE.MeshStandardMaterial).emissiveIntensity = THREE.MathUtils.lerp(
+      (taillightStrip.material as THREE.MeshStandardMaterial).emissiveIntensity,
+      targetTailEmissive,
+      lerpSpeed * 3
+    );
 
     // Underglow
     const targetUnderglowIntensity = underglowOn ? 2.8 : 0.0;

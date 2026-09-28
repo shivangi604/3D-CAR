@@ -248,6 +248,14 @@ class SoundEngine {
     const ctx = this.getContext();
     if (!ctx) return;
 
+    if (speedRatio <= 0.005 && !isAccelerating) {
+      // Vehicle is completely stopped and not accelerating: silence engine audio
+      if (this.testDriveGain) {
+        this.testDriveGain.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.06);
+      }
+      return;
+    }
+
     try {
       if (!this.testDriveOsc) {
         this.testDriveOsc = ctx.createOscillator();
@@ -266,7 +274,7 @@ class SoundEngine {
       }
 
       const targetFreq = 75 + speedRatio * 420 + (isAccelerating ? 40 : 0);
-      const targetGain = 0.03 + speedRatio * 0.08 + (isAccelerating ? 0.03 : 0);
+      const targetGain = 0.02 + speedRatio * 0.08 + (isAccelerating ? 0.03 : 0);
 
       this.testDriveOsc.frequency.setTargetAtTime(targetFreq, ctx.currentTime, 0.08);
       if (this.testDriveGain) {
