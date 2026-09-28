@@ -1,0 +1,6 @@
+{
+  "name": "Aether Hyperion - Future 3D Car Showroom",
+  "description": "Cinematic 3D future car showroom featuring rocket launch prologue, real-time 3D vehicle visualizer, 360 rotation, door animation, custom wheels, paint studio, and test drive simulator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
